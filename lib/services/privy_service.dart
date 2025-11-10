@@ -1,173 +1,286 @@
-import 'dart:convert';
 import 'package:flutter/foundation.dart';
-import 'package:webview_flutter/webview_flutter.dart';
-
-class PrivyUser {
-  final String? id;
-  final String? walletAddress;
-  final String? email;
-
-  PrivyUser({this.id, this.walletAddress, this.email});
-
-  factory PrivyUser.fromJson(Map<String, dynamic> json) {
-    return PrivyUser(
-      id: json['id'],
-      walletAddress: json['wallet']?['address'],
-      email: json['email'],
-    );
-  }
-
-  Map<String, dynamic> toJson() {
-    return {
-      'id': id,
-      'walletAddress': walletAddress,
-      'email': email,
-    };
-  }
-}
+import 'package:privy_flutter/privy_flutter.dart';
 
 class PrivyService extends ChangeNotifier {
   static const String appId = 'cmhsxw209010cl50clkljmd4o';
-  static const String appSecret = '21HZARwBzZeyopJ2t3RTh6eQ1zcyWbeNKpF3jW2CNyq9CWS4v4ryZ1793cBo3R3uHuB7r1uSpGmn7kHePQDNa2eF';
+  static const String clientId = 'client-WY6SWUTN8yhzATNReKMneBZDnqLGAP7B8fodzRBEwVFmQ';
 
+  late final Privy _privy;
   PrivyUser? _user;
-  bool _isConnected = false;
+  bool _isInitialized = false;
   bool _isLoading = false;
   String? _error;
 
   PrivyUser? get user => _user;
-  bool get isConnected => _isConnected;
+  bool get isAuthenticated => _user != null;
+  bool get isInitialized => _isInitialized;
   bool get isLoading => _isLoading;
   String? get error => _error;
+  Privy get privy => _privy;
 
-  WebViewController? _webViewController;
-
-  void setWebViewController(WebViewController controller) {
-    _webViewController = controller;
+  PrivyService() {
+    _initialize();
   }
 
-  void handleMessage(JavaScriptMessage message) {
+  void _initialize() {
     try {
-      final data = jsonDecode(message.message);
-      final event = data['event'];
-      final eventData = data['data'];
+      final config = PrivyConfig(
+        appId: appId,
+        appClientId: clientId,
+      );
+      _privy = Privy(config: config);
+      _isInitialized = true;
 
-      if (kDebugMode) {
-        print('Privy Event: $event');
-        print('Privy Data: $eventData');
-      }
+      // Listen to authentication state changes
+      _privy.user.listen((user) {
+        _user = user;
+        notifyListeners();
+      });
 
-      switch (event) {
-        case 'privy_ready':
-          _isLoading = false;
-          _error = null;
-          notifyListeners();
-          break;
-
-        case 'login_started':
-          _isLoading = true;
-          _error = null;
-          notifyListeners();
-          break;
-
-        case 'login_success':
-          _isLoading = false;
-          _isConnected = true;
-          if (eventData['user'] != null) {
-            _user = PrivyUser.fromJson(eventData['user']);
-          }
-          notifyListeners();
-          break;
-
-        case 'login_error':
-          _isLoading = false;
-          _error = eventData['error'] ?? 'Login failed';
-          notifyListeners();
-          break;
-
-        case 'logout_success':
-          _isLoading = false;
-          _isConnected = false;
-          _user = null;
-          notifyListeners();
-          break;
-
-        case 'logout_error':
-          _isLoading = false;
-          _error = eventData['error'] ?? 'Logout failed';
-          notifyListeners();
-          break;
-
-        case 'privy_error':
-          _isLoading = false;
-          _error = eventData['error'] ?? 'An error occurred';
-          notifyListeners();
-          break;
-
-        case 'open_privy_login':
-          // Handle opening Privy login in external browser or custom implementation
-          if (kDebugMode) {
-            print('Should open Privy login with App ID: ${eventData['appId']}');
-          }
-          break;
-
-        default:
-          if (kDebugMode) {
-            print('Unknown event: $event');
-          }
-      }
+      notifyListeners();
     } catch (e) {
+      _error = 'Failed to initialize Privy: $e';
       if (kDebugMode) {
-        print('Error handling message: $e');
+        print('Privy initialization error: $e');
       }
-      _error = 'Error processing message';
       notifyListeners();
     }
   }
 
-  Future<void> login() async {
-    if (_webViewController != null) {
-      final message = jsonEncode({'action': 'login'});
-      await _webViewController!.runJavaScript(
-        'handleFlutterMessage(\'$message\')',
+  // Email authentication
+  Future<void> sendEmailCode(String email) async {
+    try {
+      _isLoading = true;
+      _error = null;
+      notifyListeners();
+
+      final result = await _privy.email.sendCode(email);
+
+      result.when(
+        success: (_) {
+          _isLoading = false;
+          notifyListeners();
+        },
+        failure: (exception) {
+          _error = 'Failed to send email code: ${exception.message}';
+          _isLoading = false;
+          notifyListeners();
+        },
       );
+    } catch (e) {
+      _error = 'Error sending email code: $e';
+      _isLoading = false;
+      notifyListeners();
     }
   }
 
+  Future<void> loginWithEmailCode(String email, String code) async {
+    try {
+      _isLoading = true;
+      _error = null;
+      notifyListeners();
+
+      final result = await _privy.email.loginWithCode(
+        email: email,
+        code: code,
+      );
+
+      result.when(
+        success: (user) {
+          _user = user;
+          _isLoading = false;
+          notifyListeners();
+        },
+        failure: (exception) {
+          _error = 'Failed to login: ${exception.message}';
+          _isLoading = false;
+          notifyListeners();
+        },
+      );
+    } catch (e) {
+      _error = 'Error logging in: $e';
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  // SMS authentication
+  Future<void> sendSmsCode(String phoneNumber) async {
+    try {
+      _isLoading = true;
+      _error = null;
+      notifyListeners();
+
+      final result = await _privy.sms.sendCode(phoneNumber);
+
+      result.when(
+        success: (_) {
+          _isLoading = false;
+          notifyListeners();
+        },
+        failure: (exception) {
+          _error = 'Failed to send SMS code: ${exception.message}';
+          _isLoading = false;
+          notifyListeners();
+        },
+      );
+    } catch (e) {
+      _error = 'Error sending SMS code: $e';
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> loginWithSmsCode(String phoneNumber, String code) async {
+    try {
+      _isLoading = true;
+      _error = null;
+      notifyListeners();
+
+      final result = await _privy.sms.loginWithCode(
+        phoneNumber: phoneNumber,
+        code: code,
+      );
+
+      result.when(
+        success: (user) {
+          _user = user;
+          _isLoading = false;
+          notifyListeners();
+        },
+        failure: (exception) {
+          _error = 'Failed to login: ${exception.message}';
+          _isLoading = false;
+          notifyListeners();
+        },
+      );
+    } catch (e) {
+      _error = 'Error logging in: $e';
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  // OAuth authentication
+  Future<void> loginWithOAuth(OAuthProvider provider) async {
+    try {
+      _isLoading = true;
+      _error = null;
+      notifyListeners();
+
+      final result = await _privy.oauth.login(provider);
+
+      result.when(
+        success: (user) {
+          _user = user;
+          _isLoading = false;
+          notifyListeners();
+        },
+        failure: (exception) {
+          _error = 'Failed to login with OAuth: ${exception.message}';
+          _isLoading = false;
+          notifyListeners();
+        },
+      );
+    } catch (e) {
+      _error = 'Error logging in with OAuth: $e';
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  // Embedded wallet operations
+  Future<EmbeddedEthereumWallet?> createEthereumWallet() async {
+    try {
+      _isLoading = true;
+      _error = null;
+      notifyListeners();
+
+      final result = await _privy.embeddedWallet.createEthereumWallet();
+
+      EmbeddedEthereumWallet? wallet;
+      result.when(
+        success: (w) {
+          wallet = w;
+          _isLoading = false;
+          notifyListeners();
+        },
+        failure: (exception) {
+          _error = 'Failed to create Ethereum wallet: ${exception.message}';
+          _isLoading = false;
+          notifyListeners();
+        },
+      );
+
+      return wallet;
+    } catch (e) {
+      _error = 'Error creating Ethereum wallet: $e';
+      _isLoading = false;
+      notifyListeners();
+      return null;
+    }
+  }
+
+  Future<EmbeddedSolanaWallet?> createSolanaWallet() async {
+    try {
+      _isLoading = true;
+      _error = null;
+      notifyListeners();
+
+      final result = await _privy.embeddedWallet.createSolanaWallet();
+
+      EmbeddedSolanaWallet? wallet;
+      result.when(
+        success: (w) {
+          wallet = w;
+          _isLoading = false;
+          notifyListeners();
+        },
+        failure: (exception) {
+          _error = 'Failed to create Solana wallet: ${exception.message}';
+          _isLoading = false;
+          notifyListeners();
+        },
+      );
+
+      return wallet;
+    } catch (e) {
+      _error = 'Error creating Solana wallet: $e';
+      _isLoading = false;
+      notifyListeners();
+      return null;
+    }
+  }
+
+  // Logout
   Future<void> logout() async {
-    if (_webViewController != null) {
-      final message = jsonEncode({'action': 'logout'});
-      await _webViewController!.runJavaScript(
-        'handleFlutterMessage(\'$message\')',
+    try {
+      _isLoading = true;
+      _error = null;
+      notifyListeners();
+
+      final result = await _privy.logout();
+
+      result.when(
+        success: (_) {
+          _user = null;
+          _isLoading = false;
+          notifyListeners();
+        },
+        failure: (exception) {
+          _error = 'Failed to logout: ${exception.message}';
+          _isLoading = false;
+          notifyListeners();
+        },
       );
+    } catch (e) {
+      _error = 'Error logging out: $e';
+      _isLoading = false;
+      notifyListeners();
     }
   }
 
-  Future<void> getUser() async {
-    if (_webViewController != null) {
-      final message = jsonEncode({'action': 'get_user'});
-      await _webViewController!.runJavaScript(
-        'handleFlutterMessage(\'$message\')',
-      );
-    }
-  }
-
-  void userConnected(PrivyUser user) {
-    if (_webViewController != null) {
-      final message = jsonEncode({
-        'action': 'user_connected',
-        'data': {'user': user.toJson()}
-      });
-      _webViewController!.runJavaScript(
-        'handleFlutterMessage(\'$message\')',
-      );
-    }
-  }
-
-  void reset() {
-    _user = null;
-    _isConnected = false;
-    _isLoading = false;
+  void clearError() {
     _error = null;
     notifyListeners();
   }
