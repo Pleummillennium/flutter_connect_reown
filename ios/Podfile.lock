@@ -1,0 +1,58 @@
+PODS:
+  - connectivity_plus (0.0.1):
+    - Flutter
+  - Factory (2.4.3)
+  - Flutter (1.0.0)
+  - package_info_plus (0.4.5):
+    - Flutter
+  - privy_flutter (0.0.1):
+    - Factory (= 2.4.3)
+    - Flutter
+    - PrivySDK (= 2.4.1)
+  - PrivySDK (2.4.1)
+  - shared_preferences_foundation (0.0.1):
+    - Flutter
+    - FlutterMacOS
+  - url_launcher_ios (0.0.1):
+    - Flutter
+
+DEPENDENCIES:
+  - connectivity_plus (from `.symlinks/plugins/connectivity_plus/ios`)
+  - Flutter (from `Flutter`)
+  - package_info_plus (from `.symlinks/plugins/package_info_plus/ios`)
+  - privy_flutter (from `.symlinks/plugins/privy_flutter/ios`)
+  - shared_preferences_foundation (from `.symlinks/plugins/shared_preferences_foundation/darwin`)
+  - url_launcher_ios (from `.symlinks/plugins/url_launcher_ios/ios`)
+
+SPEC REPOS:
+  trunk:
+    - Factory
+    - PrivySDK
+
+EXTERNAL SOURCES:
+  connectivity_plus:
+    :path: ".symlinks/plugins/connectivity_plus/ios"
+  Flutter:
+    :path: Flutter
+  package_info_plus:
+    :path: ".symlinks/plugins/package_info_plus/ios"
+  privy_flutter:
+    :path: ".symlinks/plugins/privy_flutter/ios"
+  shared_preferences_foundation:
+    :path: ".symlinks/plugins/shared_preferences_foundation/darwin"
+  url_launcher_ios:
+    :path: ".symlinks/plugins/url_launcher_ios/ios"
+
+SPEC CHECKSUMS:
+  connectivity_plus: 2a701ffec2c0ae28a48cf7540e279787e77c447d
+  Factory: 9d20d8cb56fc44b341d6dad1cf67dc93e9ae7788
+  Flutter: cabc95a1d2626b1b06e7179b784ebcf0c0cde467
+  package_info_plus: 58f0028419748fad15bf008b270aaa8e54380b1c
+  privy_flutter: 9433fec6ab3c5ab396d1fefefe795cda409079f0
+  PrivySDK: 30b6ea6bde2a34f71e813ecd57100d80913c6f02
+  shared_preferences_foundation: 5086985c1d43c5ba4d5e69a4e8083a389e2909e6
+  url_launcher_ios: bb13df5870e8c4234ca12609d04010a21be43dfa
+
+PODFILE CHECKSUM: 1857a7cdb7dfafe45f2b0e9a9af44644190f7506
+
+COCOAPODS: 1.15.2
