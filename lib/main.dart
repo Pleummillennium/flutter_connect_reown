@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:reown_appkit/reown_appkit.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
+import 'package:http/http.dart' as http;
+import 'package:qr_flutter/qr_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'dart:convert';
 
 void main() {
@@ -39,11 +43,21 @@ class _WalletPageState extends State<WalletPage> {
   String? _signedMessage;
   DateTime? _signedAt;
   bool _isSigning = false;
+  BigInt _balance = BigInt.zero;
+  bool _isLoadingBalance = false;
+  Web3Client? _web3client;
+
+  static const String _rpcUrl = 'https://rpc.apechain.com/http';
 
   @override
   void initState() {
     super.initState();
     _initializeReownAppKit();
+    _initWeb3Client();
+  }
+
+  void _initWeb3Client() {
+    _web3client = Web3Client(_rpcUrl, http.Client());
   }
 
   Future<void> _initializeReownAppKit() async {
@@ -112,13 +126,15 @@ class _WalletPageState extends State<WalletPage> {
         // Auto-sign when connected
         if (address != null) {
           _autoSignOnConnect(address);
+          _fetchBalance(address);
         }
       } else {
-        // Clear signature when disconnected
+        // Clear signature and balance when disconnected
         setState(() {
           _signature = null;
           _signedMessage = null;
           _signedAt = null;
+          _balance = BigInt.zero;
         });
       }
 
@@ -338,10 +354,36 @@ Issued At: $issuedAt''';
     }
   }
 
+  Future<void> _fetchBalance(String address) async {
+    if (_web3client == null) return;
+
+    setState(() {
+      _isLoadingBalance = true;
+    });
+
+    try {
+      final ethereumAddress = EthereumAddress.fromHex(address);
+      final balance = await _web3client!.getBalance(ethereumAddress);
+
+      setState(() {
+        _balance = balance.getInWei;
+        _isLoadingBalance = false;
+      });
+
+      debugPrint('Balance fetched: ${balance.getValueInUnit(EtherUnit.ether)} ETH');
+    } catch (e) {
+      debugPrint('Error fetching balance: $e');
+      setState(() {
+        _isLoadingBalance = false;
+      });
+    }
+  }
+
   @override
   void dispose() {
     _appKitModal?.removeListener(_onModalUpdate);
     _appKitModal?.dispose();
+    _web3client?.dispose();
     super.dispose();
   }
 
@@ -367,6 +409,408 @@ Issued At: $issuedAt''';
         );
       }
     }
+  }
+
+  void _showSendDialog(String fromAddress) {
+    final recipientController = TextEditingController();
+    final amountController = TextEditingController();
+    bool isSending = false;
+
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: SingleChildScrollView(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'Send APE',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.grey[800],
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: () => Navigator.pop(context),
+                        icon: Icon(Icons.close, color: Colors.grey[600]),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+
+                  // Balance Display
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.blue[50],
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Available Balance',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey[700],
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '${EtherAmount.fromBigInt(EtherUnit.wei, _balance).getValueInUnit(EtherUnit.ether).toStringAsFixed(4)} APE',
+                          style: TextStyle(
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.blue[900],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+
+                  // Recipient Address
+                  Text(
+                    'Recipient Address',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.grey[700],
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: recipientController,
+                    decoration: InputDecoration(
+                      hintText: '0x...',
+                      hintStyle: TextStyle(color: Colors.grey[400]),
+                      filled: true,
+                      fillColor: Colors.grey[100],
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide.none,
+                      ),
+                      contentPadding: const EdgeInsets.all(16),
+                    ),
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontFamily: 'monospace',
+                      color: Colors.grey[800],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Amount
+                  Text(
+                    'Amount (APE)',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.grey[700],
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: amountController,
+                    keyboardType: TextInputType.numberWithOptions(decimal: true),
+                    decoration: InputDecoration(
+                      hintText: '0.0',
+                      hintStyle: TextStyle(color: Colors.grey[400]),
+                      filled: true,
+                      fillColor: Colors.grey[100],
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide.none,
+                      ),
+                      contentPadding: const EdgeInsets.all(16),
+                      suffixText: 'APE',
+                      suffixStyle: TextStyle(
+                        color: Colors.grey[600],
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.grey[800],
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+
+                  // Send Button
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: isSending
+                          ? null
+                          : () async {
+                              final recipient = recipientController.text.trim();
+                              final amountText = amountController.text.trim();
+
+                              if (recipient.isEmpty || amountText.isEmpty) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Please fill all fields'),
+                                    backgroundColor: Colors.orange,
+                                  ),
+                                );
+                                return;
+                              }
+
+                              if (!recipient.startsWith('0x') || recipient.length != 42) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Invalid recipient address'),
+                                    backgroundColor: Colors.red,
+                                  ),
+                                );
+                                return;
+                              }
+
+                              final amount = double.tryParse(amountText);
+                              if (amount == null || amount <= 0) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Invalid amount'),
+                                    backgroundColor: Colors.red,
+                                  ),
+                                );
+                                return;
+                              }
+
+                              final amountInWei = EtherAmount.fromBase10String(
+                                EtherUnit.ether,
+                                amountText,
+                              ).getInWei;
+
+                              if (amountInWei > _balance) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Insufficient balance'),
+                                    backgroundColor: Colors.red,
+                                  ),
+                                );
+                                return;
+                              }
+
+                              setDialogState(() {
+                                isSending = true;
+                              });
+
+                              try {
+                                // Prepare transaction
+                                final txHash = await _appKitModal!.request(
+                                  topic: _appKitModal!.session!.topic,
+                                  chainId: 'eip155:33139',
+                                  request: SessionRequestParams(
+                                    method: 'eth_sendTransaction',
+                                    params: [
+                                      {
+                                        'from': fromAddress,
+                                        'to': recipient,
+                                        'value': '0x${amountInWei.toRadixString(16)}',
+                                      },
+                                    ],
+                                  ),
+                                );
+
+                                debugPrint('Transaction sent: $txHash');
+
+                                if (context.mounted) {
+                                  Navigator.pop(context);
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text('Transaction sent!\nHash: ${txHash.toString().substring(0, 20)}...'),
+                                      backgroundColor: Colors.green,
+                                      duration: const Duration(seconds: 4),
+                                    ),
+                                  );
+
+                                  // Refresh balance after a delay
+                                  await Future.delayed(const Duration(seconds: 2));
+                                  _fetchBalance(fromAddress);
+                                }
+                              } catch (e) {
+                                debugPrint('Error sending transaction: $e');
+                                setDialogState(() {
+                                  isSending = false;
+                                });
+
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text('Failed to send: ${e.toString()}'),
+                                      backgroundColor: Colors.red,
+                                      duration: const Duration(seconds: 4),
+                                    ),
+                                  );
+                                }
+                              }
+                            },
+                      style: ElevatedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        backgroundColor: Colors.blue,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: isSending
+                          ? SizedBox(
+                              height: 20,
+                              width: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                              ),
+                            )
+                          : Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.send),
+                                const SizedBox(width: 8),
+                                Text(
+                                  'Send Transaction',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showReceiveDialog(String address) {
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Receive APE',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.grey[800],
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.pop(context),
+                    icon: Icon(Icons.close, color: Colors.grey[600]),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 24),
+
+              // QR Code
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: Colors.grey[300]!),
+                ),
+                child: QrImageView(
+                  data: address,
+                  version: QrVersions.auto,
+                  size: 200,
+                  backgroundColor: Colors.white,
+                ),
+              ),
+              const SizedBox(height: 24),
+
+              // Address Display
+              Text(
+                'Your Wallet Address',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey[600],
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.grey[100],
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: SelectableText(
+                  address,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontFamily: 'monospace',
+                    color: Colors.grey[800],
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // Copy Button
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: () async {
+                    await Clipboard.setData(ClipboardData(text: address));
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Address copied to clipboard!'),
+                          duration: Duration(seconds: 2),
+                          backgroundColor: Colors.green,
+                        ),
+                      );
+                    }
+                  },
+                  icon: const Icon(Icons.copy),
+                  label: const Text('Copy Address'),
+                  style: ElevatedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    backgroundColor: Colors.blue,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   @override
@@ -595,17 +1039,39 @@ Issued At: $issuedAt''';
                     ),
                   ),
                   const SizedBox(height: 8),
-                  const Text(
-                    '0.00 ETH',
-                    style: TextStyle(
-                      fontSize: 36,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                    ),
-                  ),
+                  _isLoadingBalance
+                      ? Row(
+                          children: [
+                            SizedBox(
+                              width: 24,
+                              height: 24,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Text(
+                              'Loading...',
+                              style: TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ],
+                        )
+                      : Text(
+                          '${EtherAmount.fromBigInt(EtherUnit.wei, _balance).getValueInUnit(EtherUnit.ether).toStringAsFixed(4)} APE',
+                          style: TextStyle(
+                            fontSize: 36,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
                   const SizedBox(height: 4),
                   Text(
-                    '\$0.00 USD',
+                    'ApeChain Native Token',
                     style: TextStyle(
                       fontSize: 16,
                       color: Colors.white.withValues(alpha: 0.8),
@@ -625,9 +1091,7 @@ Issued At: $issuedAt''';
                     label: 'Send',
                     color: Colors.blue,
                     onTap: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Send feature coming soon!')),
-                      );
+                      _showSendDialog(address);
                     },
                   ),
                 ),
@@ -638,9 +1102,7 @@ Issued At: $issuedAt''';
                     label: 'Receive',
                     color: Colors.green,
                     onTap: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Receive feature coming soon!')),
-                      );
+                      _showReceiveDialog(address);
                     },
                   ),
                 ),
@@ -650,10 +1112,32 @@ Issued At: $issuedAt''';
                     icon: Icons.shopping_bag,
                     label: 'Buy',
                     color: Colors.purple,
-                    onTap: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Buy feature coming soon!')),
-                      );
+                    onTap: () async {
+                      final uri = Uri.parse('https://apechain.com/bridge');
+                      try {
+                        if (await canLaunchUrl(uri)) {
+                          await launchUrl(uri, mode: LaunchMode.externalApplication);
+                        } else {
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Cannot open browser'),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                          }
+                        }
+                      } catch (e) {
+                        debugPrint('Error launching URL: $e');
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Failed to open: ${e.toString()}'),
+                              backgroundColor: Colors.red,
+                            ),
+                          );
+                        }
+                      }
                     },
                   ),
                 ),
@@ -847,13 +1331,17 @@ Issued At: $issuedAt''';
                         ),
                         const SizedBox(width: 8),
                         InkWell(
-                          onTap: () {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Address copied!'),
-                                duration: Duration(seconds: 2),
-                              ),
-                            );
+                          onTap: () async {
+                            await Clipboard.setData(ClipboardData(text: address));
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Address copied to clipboard!'),
+                                  duration: Duration(seconds: 2),
+                                  backgroundColor: Colors.green,
+                                ),
+                              );
+                            }
                           },
                           child: Container(
                             padding: const EdgeInsets.all(6),
