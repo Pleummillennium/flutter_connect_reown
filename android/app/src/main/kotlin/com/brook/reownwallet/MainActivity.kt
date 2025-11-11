@@ -1,4 +1,4 @@
-package com.example.flutter_rbh_privy
+package com.brook.reownwallet
 
 import io.flutter.embedding.android.FlutterActivity
 
