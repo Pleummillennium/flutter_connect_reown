@@ -56,5 +56,12 @@
 			</array>
 		</dict>
 	</array>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>metamask</string>
+		<string>trust</string>
+		<string>wc</string>
+		<string>https</string>
+	</array>
 </dict>
 </plist>
